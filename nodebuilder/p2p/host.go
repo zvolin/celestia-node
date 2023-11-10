@@ -2,7 +2,11 @@ package p2p
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/libp2p/go-libp2p"
@@ -27,10 +31,49 @@ import (
 )
 
 var enableQUIC bool
+var staticTlsConfig *tls.Config
 
 func init() {
 	_, ok := os.LookupEnv("CELESTIA_ENABLE_QUIC")
 	enableQUIC = ok
+
+	keyFileName, hasKeyFile := os.LookupEnv("CELESTIA_SSL_PRIVATE_KEY_FILE")
+	certFileName, hasCertFile := os.LookupEnv("CELESTIA_SSL_CERT_FILE")
+
+	if hasKeyFile && hasCertFile {
+		// grab the key
+		privateKeyPem, err := ioutil.ReadFile(keyFileName)
+		if err != nil {
+			fmt.Println("Failed reading ssl private key file", err)
+		}
+		// decode pem
+		block, _ := pem.Decode(privateKeyPem)
+		sslPrivateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			fmt.Println("Failed decoding private key", err)
+		}
+
+		// grab the cert
+		certificatePem, err := ioutil.ReadFile(certFileName)
+		if err != nil {
+			fmt.Println("Failed reading ssl certificate file", err)
+		}
+		// decode pem
+		block, _ = pem.Decode(certificatePem)
+		sslCertificate, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			fmt.Println("Failed decoding private key", err)
+		}
+
+		fmt.Println("Successfully read tls configuration")
+		staticTlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{{
+				Certificate: [][]byte{sslCertificate.Raw},
+				PrivateKey:  sslPrivateKey,
+				Leaf:        sslCertificate,
+			}},
+		}
+	}
 }
 
 // routedHost constructs a wrapped Host that may fallback to address discovery,
@@ -62,8 +105,16 @@ func host(params hostParams) (HostBase, error) {
 	if enableQUIC {
 		opts = append(opts,
 			libp2p.Transport(quic.NewTransport),
-			libp2p.Transport(webtransport.New),
 		)
+		if staticTlsConfig != nil {
+			opts = append(opts,
+				libp2p.Transport(webtransport.New, webtransport.WithTLSConfig(staticTlsConfig)),
+			)
+		} else {
+			opts = append(opts,
+				libp2p.Transport(webtransport.New),
+			)
+		}
 	}
 
 	if params.Registry != nil {
