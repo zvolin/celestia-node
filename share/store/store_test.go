@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -32,6 +34,20 @@ func TestEDSStore(t *testing.T) {
 	// PutRegistersShard tests if Put registers the shard on the underlying DAGStore
 	t.Run("Put", func(t *testing.T) {
 		eds, dah := randomEDS(t)
+
+		f_eds, _ := os.Create("eds.json")
+		f_dah, _ := os.Create("dah.json")
+		defer f_eds.Close()
+		defer f_dah.Close()
+
+		json_eds, _ := json.Marshal(eds)
+		f_eds.Write(json_eds)
+
+		json_dah, _ := json.Marshal(dah)
+		f_dah.Write(json_dah)
+
+		t.Error()
+
 		height := height.Add(1)
 
 		f, err := edsStore.Put(ctx, dah.Hash(), height, eds)
